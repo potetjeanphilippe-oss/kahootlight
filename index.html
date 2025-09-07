@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mini-Kahoot local — jusqu'à 40 joueurs 🎮</title>
+  <title>Mini-Kahoot Google Sheets 🎮</title>
   <style>
     :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--answered:#22c55e;--selected:#facc15}
     *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
@@ -13,8 +13,9 @@
     .wrap{display:flex;gap:16px;padding:18px}
     .left{width:360px}
     .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.04)}
-    .join{display:flex;gap:8px;margin-bottom:12px}
+    .join, .sheet-select{display:flex;gap:8px;margin-bottom:12px}
     input[type=text]{flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+    select{flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
     button{background:var(--accent);border:none;padding:8px 10px;border-radius:8px;color:#022;cursor:pointer}
     .players{max-height:60vh;overflow:auto;margin-top:8px}
     .player{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;margin-bottom:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));cursor:pointer;transition:0.2s;border:2px solid transparent}
@@ -28,7 +29,6 @@
     .controls{display:flex;gap:8px;margin-top:8px}
     .main{flex:1}
     .question{margin-bottom:12px}
-    .qbox{padding:16px;border-radius:12px}
     .choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
     .choice{padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);cursor:pointer}
     .choice:hover{transform:translateY(-3px)}
@@ -39,41 +39,33 @@
 </head>
 <body>
   <header>
-    <h1>🎮 Mini-Kahoot local — jusqu'à 40 joueurs</h1>
-    <div style="margin-left:auto" class="small">Astuce: fonctionne sur 1 écran (classe)</div>
+    <h1>🎮 Mini-Kahoot Google Sheets</h1>
   </header>
 
   <div class="wrap">
     <div class="left">
+      <div class="card sheet-select">
+        <select id="sheetSelector">
+          <option value="">-- Choisir une liste --</option>
+        </select>
+        <button id="loadSheet">Charger ✅</button>
+      </div>
+
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <strong>👥 Participants</strong>
           <span class="small">Max 40</span>
         </div>
-
         <div class="join">
           <input id="nick" placeholder="Tape ton pseudo (ex: Léo_camion)" maxlength="20" />
           <button id="joinBtn">Rejoindre ➕</button>
         </div>
         <div class="small">Clique sur ton pseudo puis choisis une réponse.</div>
-
         <div class="players" id="players"></div>
-
         <div class="controls">
           <button id="resetBtn">Réinitialiser 🔄</button>
           <button id="clearAnswers">Effacer réponses</button>
         </div>
-      </div>
-
-      <div style="height:12px"></div>
-      <div class="card small">
-        <strong>ℹ️ Mode d'emploi</strong>
-        <ul>
-          <li>1) Les élèves s'inscrivent (max 40) en tapant un pseudo.</li>
-          <li>2) L'animateur affiche les questions.</li>
-          <li>3) Clique sur ton pseudo puis sur une réponse.</li>
-          <li>4) Cliquez sur "Terminé" pour afficher la correction et mettre à jour les scores.</li>
-        </ul>
       </div>
     </div>
 
@@ -82,7 +74,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div>
             <div class="small">❓ Question <span id="qIndex">1</span>/<span id="qTotal">?</span></div>
-            <h2 id="questionText">Chargement...</h2>
+            <h2 id="questionText">Choisir une liste pour commencer...</h2>
           </div>
           <div style="text-align:right">
             <button id="prevQ">◀️</button>
@@ -91,11 +83,9 @@
             <button id="newGame">Nouvelles questions 🎲</button>
           </div>
         </div>
-
         <div class="choices" id="choices"></div>
         <div class="small" id="answerReveal" style="margin-top:10px;display:none"></div>
       </div>
-
       <div class="card" style="margin-top:12px">
         <strong>📊 Classement rapide</strong>
         <div id="ranking" style="margin-top:10px"></div>
@@ -104,39 +94,64 @@
   </div>
 
   <script>
-    const MAX_PLAYERS = 40;
-    const POINTS_PER_CORRECT = 1;
-    const POINTS_TO_FILL = 10;
+    const MAX_PLAYERS=40, POINTS_PER_CORRECT=1, POINTS_TO_FILL=10;
+    let players=[], questions=[], qIndex=0, selectedPlayer=null, answersBuffer={};
+    let sheetsData = {};
 
-    const sampleQuestions = [
-      {q: "Quel est le symbole chimique du fer?", choices:["Fe","Ir","F","Fr"], correct:0},
-      {q: "Quelle distance pour un freinage d'urgence augmente si le véhicule est lourd?", choices:["Augmente","Diminue","Ne change pas","Devient nul"], correct:0},
-      {q: "Quel document suit la marchandise au transport routier?", choices:["BL","BDE","Facture client","Bon de livraison"], correct:3},
-      {q: "Quelle est la formule de l'aire d'un rectangle?", choices:["L×l","2×(L+l)","πr²","L+l"], correct:0}
-    ];
+    const playersDiv=document.getElementById('players');
+    const nickInput=document.getElementById('nick');
+    const joinBtn=document.getElementById('joinBtn');
+    const resetBtn=document.getElementById('resetBtn');
+    const clearAnswersBtn=document.getElementById('clearAnswers');
+    const questionText=document.getElementById('questionText');
+    const choicesDiv=document.getElementById('choices');
+    const qIndexSpan=document.getElementById('qIndex');
+    const qTotalSpan=document.getElementById('qTotal');
+    const prevQ=document.getElementById('prevQ');
+    const nextQ=document.getElementById('nextQ');
+    const newGame=document.getElementById('newGame');
+    const rankingDiv=document.getElementById('ranking');
+    const finishBtn=document.getElementById('finishBtn');
+    const answerReveal=document.getElementById('answerReveal');
+    const sheetSelector=document.getElementById('sheetSelector');
+    const loadSheet=document.getElementById('loadSheet');
 
-    let players = [];
-    let questions = [...sampleQuestions];
-    let qIndex = 0;
-    let selectedPlayer = null;
-    let answersBuffer = {};
+    // *********************
+    // METTRE ICI L'URL DE TON WEB APP APPS SCRIPT
+    // Exemple: const GOOGLE_SHEET_JSON_URL = "https://script.google.com/macros/s/XXXXX/exec"
+    // *********************
+    const GOOGLE_SHEET_JSON_URL = "https://script.google.com/macros/s/AKfycbzxJ4mhHdfAC8mpnHf_Hp7KnJV9DExoSTXQg1gu_Y9Az1RXJFrCA69ZS9ICkV4aTWngRA/exec";
 
-    const playersDiv = document.getElementById('players');
-    const nickInput = document.getElementById('nick');
-    const joinBtn = document.getElementById('joinBtn');
-    const resetBtn = document.getElementById('resetBtn');
-    const clearAnswersBtn = document.getElementById('clearAnswers');
-    const questionText = document.getElementById('questionText');
-    const choicesDiv = document.getElementById('choices');
-    const qIndexSpan = document.getElementById('qIndex');
-    const qTotalSpan = document.getElementById('qTotal');
-    const prevQ = document.getElementById('prevQ');
-    const nextQ = document.getElementById('nextQ');
-    const newGame = document.getElementById('newGame');
-    const rankingDiv = document.getElementById('ranking');
-    const finishBtn = document.getElementById('finishBtn');
-    const answerReveal = document.getElementById('answerReveal');
+    async function loadSheets() {
+      try {
+        const res = await fetch(GOOGLE_SHEET_JSON_URL);
+        sheetsData = await res.json();
+        sheetSelector.innerHTML = '';
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.textContent = '-- Choisir une liste --';
+        sheetSelector.appendChild(defaultOpt);
+        for (const name in sheetsData) {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          sheetSelector.appendChild(opt);
+        }
+      } catch(e) {
+        alert("Erreur lors du chargement des listes");
+        console.error(e);
+      }
+    }
 
+    loadSheet.addEventListener('click', ()=>{
+      const selected = sheetSelector.value;
+      if(!selected) return alert("Choisir une liste !");
+      questions = sheetsData[selected];
+      qIndex = 0; answersBuffer = {};
+      renderQuestion();
+    });
+
+    // Ajouter joueur
     function addPlayer(name){
       name=name.trim();
       if(!name) return alert('Pseudo vide 😅');
@@ -147,12 +162,8 @@
       renderPlayers();
       nickInput.value='';
     }
-
     joinBtn.addEventListener('click', ()=>addPlayer(nickInput.value));
     nickInput.addEventListener('keydown', e=>{if(e.key==='Enter') addPlayer(nickInput.value)});
-
-    resetBtn.addEventListener('click', ()=>{if(!confirm('Tout supprimer et recommencer ?')) return; players=[]; answersBuffer={}; renderPlayers();});
-    clearAnswersBtn.addEventListener('click', ()=>{answersBuffer={}; renderPlayers(); alert('Réponses effacées — prêts pour la prochaine question')});
 
     function renderPlayers(){
       playersDiv.innerHTML='';
@@ -175,11 +186,12 @@
     }
 
     function renderRanking(){
-      const sorted = [...players].sort((a,b)=>b.points-a.points);
-      rankingDiv.innerHTML = sorted.slice(0,8).map((p,i)=>`<div style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)">${i+1}. ${p.name} — ${p.points} pts</div>`).join('');
+      const sorted=[...players].sort((a,b)=>b.points-a.points);
+      rankingDiv.innerHTML=sorted.slice(0,8).map((p,i)=>`<div style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)">${i+1}. ${p.name} — ${p.points} pts</div>`).join('');
     }
 
     function renderQuestion(){
+      if(!questions.length){questionText.textContent="Choisir une liste pour commencer..."; choicesDiv.innerHTML=''; qIndexSpan.textContent=0; qTotalSpan.textContent=0; return;}
       qIndexSpan.textContent=qIndex+1;
       qTotalSpan.textContent=questions.length;
       const q=questions[qIndex];
@@ -201,38 +213,25 @@
     }
 
     finishBtn.addEventListener('click', ()=>{
+      if(!questions.length) return;
       const q=questions[qIndex];
       Object.entries(answersBuffer).forEach(([pid,choice])=>{
-        const player = players.find(p=>p.id==pid);
-        if(player && parseInt(choice)===q.correct) player.points += POINTS_PER_CORRECT;
+        const player=players.find(p=>p.id==pid);
+        if(player && parseInt(choice)===q.correct) player.points+=POINTS_PER_CORRECT;
       });
-      selectedPlayer = null;
-      answersBuffer = {};
-      renderPlayers();
-
+      selectedPlayer=null; answersBuffer={}; renderPlayers();
       answerReveal.textContent=`✔️ La bonne réponse était : ${String.fromCharCode(65+q.correct)}. ${q.choices[q.correct]}`;
       answerReveal.style.display='block';
     });
 
     prevQ.addEventListener('click', ()=>{if(qIndex>0){qIndex--; renderQuestion();}});
     nextQ.addEventListener('click', ()=>{if(qIndex<questions.length-1){qIndex++; renderQuestion();}});
-    newGame.addEventListener('click', ()=>{
-      if(!confirm('Nouvelle partie : mélanger questions et réinitialiser points ?')) return;
-      questions=shuffle([...sampleQuestions]);
-      qIndex=0;
-      players.forEach(p=>p.points=0);
-      answersBuffer={};
-      renderQuestion(); renderPlayers();
-    });
+    newGame.addEventListener('click', ()=>{if(!confirm('Nouvelle partie : mélanger questions et réinitialiser points ?')) return; questions=shuffle([...questions]); qIndex=0; players.forEach(p=>p.points=0); answersBuffer={}; renderQuestion(); renderPlayers();});
 
-    function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+    function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]} return a}
 
-    (function init(){
-      questions=[...sampleQuestions];
-      qTotalSpan.textContent=questions.length;
-      renderQuestion();
-      renderPlayers();
-    })();
+    renderPlayers();
+    renderQuestion();
   </script>
 </body>
 </html>
