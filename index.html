@@ -149,6 +149,9 @@
       questions = sheetsData[selected];
       qIndex = 0; answersBuffer = {};
       renderQuestion();
+      
+      
+
     });
 
     // Ajouter joueur
@@ -232,6 +235,8 @@
 
     renderPlayers();
     renderQuestion();
+    // Charger automatiquement les listes dès l'ouverture
+    loadSheets();
   </script>
 </body>
 </html>
