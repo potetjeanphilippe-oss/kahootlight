@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Mini-Kahoot local — jusqu'à 40 joueurs 🎮</title>
   <style>
-    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8}
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--answered:#22c55e}
     *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
     body{margin:0;min-height:100vh;background:linear-gradient(180deg,#071022, #071b2a);color:#e6eef6}
     header{padding:12px 18px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:12px}
@@ -17,7 +17,8 @@
     input[type=text]{flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
     button{background:var(--accent);border:none;padding:8px 10px;border-radius:8px;color:#022;cursor:pointer}
     .players{max-height:60vh;overflow:auto;margin-top:8px}
-    .player{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;margin-bottom:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));}
+    .player{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;margin-bottom:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));cursor:pointer;transition:0.2s}
+    .player.answered{background:var(--answered)}
     .avatar{width:44px;height:44px;border-radius:8px;background:#07192a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700}
     .pinfo{flex:1}
     .pname{font-weight:600}
@@ -41,7 +42,7 @@
 <body>
   <header>
     <h1>🎮 Mini-Kahoot local — jusqu'à 40 joueurs</h1>
-    <div style="margin-left:auto" class="small">Astuce: fonctionne sur 1 écran (classe) — pour multi-appareils il faut un serveur 🔌</div>
+    <div style="margin-left:auto" class="small">Astuce: fonctionne sur 1 écran (classe)</div>
   </header>
 
   <div class="wrap">
@@ -56,7 +57,7 @@
           <input id="nick" placeholder="Tape ton pseudo (ex: Léo_camion)" maxlength="20" />
           <button id="joinBtn">Rejoindre ➕</button>
         </div>
-        <div class="small">Chaque pseudo doit être unique. Clique sur un choix puis indique ton pseudo pour répondre.</div>
+        <div class="small">Clique sur ton pseudo puis choisis une réponse.</div>
 
         <div class="players" id="players"></div>
 
@@ -72,8 +73,8 @@
         <ul>
           <li>1) Les élèves s'inscrivent (max 40) en tapant un pseudo.</li>
           <li>2) L'animateur affiche les questions.</li>
-          <li>3) Pour répondre: clique sur une réponse puis choisis ton pseudo dans le menu.</li>
-          <li>4) A la fin, clique sur "Terminé" pour afficher la correction et mettre à jour les scores.</li>
+          <li>3) Clique sur ton pseudo puis sur une réponse.</li>
+          <li>4) Cliquez sur "Terminé" pour afficher la correction et mettre à jour les scores.</li>
         </ul>
       </div>
     </div>
@@ -104,172 +105,125 @@
     </div>
   </div>
 
-  <footer>Made for cours bac pro — amusons-nous en apprenant ! 😜</footer>
-
-  <div id="playerModal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)">
-    <div style="background:#071226;padding:14px;border-radius:10px;width:320px;border:1px solid rgba(255,255,255,0.04)">
-      <div style="font-weight:700;margin-bottom:8px">Qui répond ?</div>
-      <select id="playerSelect" style="width:100%;padding:8px;border-radius:8px;background:transparent;color:inherit"></select>
-      <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
-        <button id="cancelPlayer">Annuler</button>
-        <button id="confirmPlayer">Valider ✅</button>
-      </div>
-    </div>
-  </div>
-
   <script>
-    const MAX_PLAYERS = 40
-    const POINTS_PER_CORRECT = 1
-    const POINTS_TO_FILL = 10
+    const MAX_PLAYERS = 40;
+    const POINTS_PER_CORRECT = 1;
+    const POINTS_TO_FILL = 10;
 
     const sampleQuestions = [
       {q: "Quel est le symbole chimique du fer?", choices:["Fe","Ir","F","Fr"], correct:0},
       {q: "Quelle distance pour un freinage d'urgence augmente si le véhicule est lourd?", choices:["Augmente","Diminue","Ne change pas","Devient nul"], correct:0},
       {q: "Quel document suit la marchandise au transport routier?", choices:["BL","BDE","Facture client","Bon de livraison"], correct:3},
       {q: "Quelle est la formule de l'aire d'un rectangle?", choices:["L×l","2×(L+l)","πr²","L+l"], correct:0}
-    ]
+    ];
 
-    let players = []
-    let questions = [...sampleQuestions]
-    let qIndex = 0
-    let pendingAnswerFor = null
-    let answersBuffer = {} // {playerId: chosenIndex}
+    let players = [];
+    let questions = [...sampleQuestions];
+    let qIndex = 0;
+    let selectedPlayer = null;
+    let answersBuffer = {};
 
-    const playersDiv = document.getElementById('players')
-    const nickInput = document.getElementById('nick')
-    const joinBtn = document.getElementById('joinBtn')
-    const resetBtn = document.getElementById('resetBtn')
-    const clearAnswersBtn = document.getElementById('clearAnswers')
-    const questionText = document.getElementById('questionText')
-    const choicesDiv = document.getElementById('choices')
-    const qIndexSpan = document.getElementById('qIndex')
-    const qTotalSpan = document.getElementById('qTotal')
-    const prevQ = document.getElementById('prevQ')
-    const nextQ = document.getElementById('nextQ')
-    const newGame = document.getElementById('newGame')
-    const rankingDiv = document.getElementById('ranking')
-    const playerModal = document.getElementById('playerModal')
-    const playerSelect = document.getElementById('playerSelect')
-    const cancelPlayer = document.getElementById('cancelPlayer')
-    const confirmPlayer = document.getElementById('confirmPlayer')
-    const finishBtn = document.getElementById('finishBtn')
-    const answerReveal = document.getElementById('answerReveal')
+    const playersDiv = document.getElementById('players');
+    const nickInput = document.getElementById('nick');
+    const joinBtn = document.getElementById('joinBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const clearAnswersBtn = document.getElementById('clearAnswers');
+    const questionText = document.getElementById('questionText');
+    const choicesDiv = document.getElementById('choices');
+    const qIndexSpan = document.getElementById('qIndex');
+    const qTotalSpan = document.getElementById('qTotal');
+    const prevQ = document.getElementById('prevQ');
+    const nextQ = document.getElementById('nextQ');
+    const newGame = document.getElementById('newGame');
+    const rankingDiv = document.getElementById('ranking');
+    const finishBtn = document.getElementById('finishBtn');
+    const answerReveal = document.getElementById('answerReveal');
 
     function renderPlayers(){
-      playersDiv.innerHTML = ''
+      playersDiv.innerHTML='';
       players.forEach(p=>{
-        const el = document.createElement('div')
-        el.className = 'player'
-        el.innerHTML = `
-          <div class="avatar">${p.name.slice(0,2).toUpperCase()}</div>
-          <div class="pinfo">
-            <div class="pname">${p.name} <span class="small">(${p.points} pts)</span></div>
-            <div class="bar"><i style="width:${Math.min(100, (p.points/POINTS_TO_FILL)*100)}%"></i></div>
-          </div>
-          <div class="small">#${p.id}</div>
-        `
-        playersDiv.appendChild(el)
-      })
-      renderRanking()
+        const el=document.createElement('div');
+        el.className='player'+(answersBuffer[p.id]!=undefined?' answered':'');
+        el.innerHTML=`<div class="avatar">${p.name.slice(0,2).toUpperCase()}</div>
+                        <div class="pinfo">
+                          <div class="pname">${p.name} <span class="small">(${p.points} pts)</span></div>
+                          <div class="bar"><i style="width:${Math.min(100,(p.points/POINTS_TO_FILL)*100)}%"></i></div>
+                        </div>
+                        <div class="small">#${p.id}</div>`;
+        el.addEventListener('click', ()=>{selectedPlayer=p.id; alert(`Pseudo sélectionné : ${p.name} ✅`)})
+        playersDiv.appendChild(el);
+      });
+      renderRanking();
     }
 
     function renderRanking(){
-      const sorted = [...players].sort((a,b)=>b.points-a.points)
-      rankingDiv.innerHTML = sorted.slice(0,8).map((p,i)=>`<div style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)">${i+1}. ${p.name} — ${p.points} pts</div>`).join('')
+      const sorted = [...players].sort((a,b)=>b.points-a.points);
+      rankingDiv.innerHTML = sorted.slice(0,8).map((p,i)=>`<div style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)">${i+1}. ${p.name} — ${p.points} pts</div>`).join('');
     }
 
     function addPlayer(name){
-      name = name.trim()
-      if(!name) return alert('Pseudo vide 😅')
-      if(players.length>=MAX_PLAYERS) return alert('Limite atteinte (40)')
-      if(players.some(p=>p.name.toLowerCase()===name.toLowerCase())) return alert('Pseudo déjà pris 👀')
-      const id = players.length+1
-      players.push({id,name,points:0})
-      renderPlayers()
-      nickInput.value = ''
+      name=name.trim();
+      if(!name) return alert('Pseudo vide 😅');
+      if(players.length>=MAX_PLAYERS) return alert('Limite atteinte (40)');
+      if(players.some(p=>p.name.toLowerCase()===name.toLowerCase())) return alert('Pseudo déjà pris 👀');
+      const id=players.length+1;
+      players.push({id,name,points:0});
+      renderPlayers();
+      nickInput.value='';
     }
 
-    joinBtn.addEventListener('click', ()=>addPlayer(nickInput.value))
-    nickInput.addEventListener('keydown', e=>{if(e.key==='Enter') addPlayer(nickInput.value)})
+    joinBtn.addEventListener('click', ()=>addPlayer(nickInput.value));
+    nickInput.addEventListener('keydown', e=>{if(e.key==='Enter') addPlayer(nickInput.value)});
 
-    resetBtn.addEventListener('click', ()=>{
-      if(!confirm('Tout supprimer et recommencer ?')) return
-      players=[]; renderPlayers(); answersBuffer={}
-    })
-
-    clearAnswersBtn.addEventListener('click', ()=>{
-      answersBuffer={}
-      alert('Réponses effacées — prêts pour la prochaine question')
-    })
+    resetBtn.addEventListener('click', ()=>{if(!confirm('Tout supprimer et recommencer ?')) return; players=[]; answersBuffer={}; renderPlayers();});
+    clearAnswersBtn.addEventListener('click', ()=>{answersBuffer={}; renderPlayers(); alert('Réponses effacées — prêts pour la prochaine question')});
 
     function renderQuestion(){
-      qIndexSpan.textContent = qIndex+1
-      qTotalSpan.textContent = questions.length
-      const q = questions[qIndex]
-      questionText.textContent = q.q
-      choicesDiv.innerHTML = ''
-      answerReveal.style.display='none'
+      qIndexSpan.textContent=qIndex+1;
+      qTotalSpan.textContent=questions.length;
+      const q=questions[qIndex];
+      questionText.textContent=q.q;
+      choicesDiv.innerHTML='';
+      answerReveal.style.display='none';
       q.choices.forEach((c,i)=>{
-        const btn = document.createElement('div')
-        btn.className='choice'
-        btn.innerHTML = `<strong>${String.fromCharCode(65+i)}.</strong> ${c}`
+        const btn=document.createElement('div');
+        btn.className='choice';
+        btn.innerHTML=`<strong>${String.fromCharCode(65+i)}.</strong> ${c}`;
         btn.addEventListener('click', ()=>{
-          pendingAnswerFor = i
-          openPlayerModal()
-        })
-        choicesDiv.appendChild(btn)
-      })
+          if(selectedPlayer==null){alert('Sélectionne un pseudo avant 😅'); return;}
+          answersBuffer[selectedPlayer]=i;
+          renderPlayers();
+          selectedPlayer=null;
+        });
+        choicesDiv.appendChild(btn);
+      });
     }
-
-    function openPlayerModal(){
-      playerSelect.innerHTML = players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')
-      if(players.length===0){alert('Aucun joueur inscrit 😅'); return}
-      playerModal.style.display='flex'
-    }
-    cancelPlayer.addEventListener('click', ()=>{playerModal.style.display='none'; pendingAnswerFor=null})
-
-    confirmPlayer.addEventListener('click', ()=>{
-      const pid = parseInt(playerSelect.value)
-      const player = players.find(p=>p.id===pid)
-      if(!player) {alert('Joueur introuvable'); return}
-      answersBuffer[pid] = pendingAnswerFor
-      playerModal.style.display='none'
-      pendingAnswerFor=null
-    })
 
     finishBtn.addEventListener('click', ()=>{
-      const q = questions[qIndex]
+      const q=questions[qIndex];
       Object.entries(answersBuffer).forEach(([pid,choice])=>{
-        const player = players.find(p=>p.id==pid)
-        if(player && parseInt(choice)===q.correct){
-          player.points += POINTS_PER_CORRECT
-        }
-      })
-      answersBuffer={}
-      renderPlayers()
-      answerReveal.textContent = `✔️ La bonne réponse était : ${String.fromCharCode(65+q.correct)}. ${q.choices[q.correct]}`
-      answerReveal.style.display='block'
-    })
+        const player = players.find(p=>p.id==pid);
+        if(player && parseInt(choice)===q.correct) player.points += POINTS_PER_CORRECT;
+      });
+      renderPlayers();
+      answerReveal.textContent=`✔️ La bonne réponse était : ${String.fromCharCode(65+q.correct)}. ${q.choices[q.correct]}`;
+      answerReveal.style.display='block';
+    });
 
-    prevQ.addEventListener('click', ()=>{ if(qIndex>0) { qIndex--; renderQuestion() } })
-    nextQ.addEventListener('click', ()=>{ if(qIndex<questions.length-1) { qIndex++; renderQuestion() } })
-
+    prevQ.addEventListener('click', ()=>{if(qIndex>0){qIndex--; renderQuestion();}});
+    nextQ.addEventListener('click', ()=>{if(qIndex<questions.length-1){qIndex++; renderQuestion();}});
     newGame.addEventListener('click', ()=>{
-      if(!confirm('Nouvelle partie : mélanger questions et réinitialiser points ?')) return
-      questions = shuffle([...sampleQuestions])
-      qIndex=0
-      players.forEach(p=>{p.points=0})
-      answersBuffer={}
-      renderQuestion(); renderPlayers()
-    })
+      if(!confirm('Nouvelle partie : mélanger questions et réinitialiser points ?')) return;
+      questions=shuffle([...sampleQuestions]);
+      qIndex=0;
+      players.forEach(p=>p.points=0);
+      answersBuffer={};
+      renderQuestion(); renderPlayers();
+    });
 
     function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 
-    (function init(){
-      questions = [...sampleQuestions]
-      qTotalSpan.textContent = questions.length
-      renderQuestion(); renderPlayers()
-    })()
+    (function init(){questions=[...sampleQuestions]; qTotalSpan.textContent=questions.length; renderQuestion(); renderPlayers();})();
   </script>
 </body>
 </html>
