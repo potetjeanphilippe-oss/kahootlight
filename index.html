@@ -7,7 +7,7 @@
   <style>
     :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--answered:#22c55e;--selected:#facc15}
     *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
-    body{margin:0;min-height:100vh;background:linear-gradient(180deg,#071022, #071b2a);color:#e6eef6}
+    body{margin:0;min-height:100vh;background:linear-gradient(180deg,#071022,#071b2a);color:#e6eef6}
     header{padding:12px 18px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:12px}
     h1{font-size:18px;margin:0}
     .wrap{display:flex;gap:16px;padding:18px}
@@ -26,7 +26,6 @@
     .bar{height:10px;background:rgba(255,255,255,0.06);border-radius:999px;margin-top:6px;overflow:hidden}
     .bar > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#60a5fa)}
     .controls{display:flex;gap:8px;margin-top:8px}
-
     .main{flex:1}
     .question{margin-bottom:12px}
     .qbox{padding:16px;border-radius:12px}
@@ -34,9 +33,7 @@
     .choice{padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);cursor:pointer}
     .choice:hover{transform:translateY(-3px)}
     .small{font-size:13px;color:var(--muted)}
-
     footer{padding:12px;text-align:center;color:var(--muted);font-size:13px}
-
     @media(max-width:900px){.wrap{flex-direction:column}.left{width:100%}}
   </style>
 </head>
@@ -135,17 +132,27 @@
     const qTotalSpan = document.getElementById('qTotal');
     const prevQ = document.getElementById('prevQ');
     const nextQ = document.getElementById('nextQ');
-    const newGame = document.getElement
+    const newGame = document.getElementById('newGame');
+    const rankingDiv = document.getElementById('ranking');
+    const finishBtn = document.getElementById('finishBtn');
+    const answerReveal = document.getElementById('answerReveal');
 
-.addEventListener('click', ()=>{if(!confirm('Nouvelle partie : mélanger questions et réinitialiser points ?')) return;
-      questions=shuffle([...sampleQuestions]);
-      qIndex=0;
-      players.forEach(p=>p.points=0);
-      answersBuffer={};
-      renderQuestion(); renderPlayers();
-    });
+    function addPlayer(name){
+      name=name.trim();
+      if(!name) return alert('Pseudo vide 😅');
+      if(players.length>=MAX_PLAYERS) return alert('Limite atteinte (40)');
+      if(players.some(p=>p.name.toLowerCase()===name.toLowerCase())) return alert('Pseudo déjà pris 👀');
+      const id=players.length+1;
+      players.push({id,name,points:0});
+      renderPlayers();
+      nickInput.value='';
+    }
 
-    function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+    joinBtn.addEventListener('click', ()=>addPlayer(nickInput.value));
+    nickInput.addEventListener('keydown', e=>{if(e.key==='Enter') addPlayer(nickInput.value)});
+
+    resetBtn.addEventListener('click', ()=>{if(!confirm('Tout supprimer et recommencer ?')) return; players=[]; answersBuffer={}; renderPlayers();});
+    clearAnswersBtn.addEventListener('click', ()=>{answersBuffer={}; renderPlayers(); alert('Réponses effacées — prêts pour la prochaine question')});
 
     function renderPlayers(){
       playersDiv.innerHTML='';
@@ -167,13 +174,38 @@
       renderRanking();
     }
 
+    function renderRanking(){
+      const sorted = [...players].sort((a,b)=>b.points-a.points);
+      rankingDiv.innerHTML = sorted.slice(0,8).map((p,i)=>`<div style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)">${i+1}. ${p.name} — ${p.points} pts</div>`).join('');
+    }
+
+    function renderQuestion(){
+      qIndexSpan.textContent=qIndex+1;
+      qTotalSpan.textContent=questions.length;
+      const q=questions[qIndex];
+      questionText.textContent=q.q;
+      choicesDiv.innerHTML='';
+      answerReveal.style.display='none';
+      q.choices.forEach((c,i)=>{
+        const btn=document.createElement('div');
+        btn.className='choice';
+        btn.innerHTML=`<strong>${String.fromCharCode(65+i)}.</strong> ${c}`;
+        btn.addEventListener('click', ()=>{
+          if(selectedPlayer==null){alert('Sélectionne un pseudo avant 😅'); return;}
+          answersBuffer[selectedPlayer]=i;
+          renderPlayers();
+          selectedPlayer=null;
+        });
+        choicesDiv.appendChild(btn);
+      });
+    }
+
     finishBtn.addEventListener('click', ()=>{
       const q=questions[qIndex];
       Object.entries(answersBuffer).forEach(([pid,choice])=>{
         const player = players.find(p=>p.id==pid);
         if(player && parseInt(choice)===q.correct) player.points += POINTS_PER_CORRECT;
       });
-      // Réinitialiser les contours et couleurs des pseudos
       selectedPlayer = null;
       answersBuffer = {};
       renderPlayers();
@@ -184,7 +216,17 @@
 
     prevQ.addEventListener('click', ()=>{if(qIndex>0){qIndex--; renderQuestion();}});
     nextQ.addEventListener('click', ()=>{if(qIndex<questions.length-1){qIndex++; renderQuestion();}});
-    
+    newGame.addEventListener('click', ()=>{
+      if(!confirm('Nouvelle partie : mélanger questions et réinitialiser points ?')) return;
+      questions=shuffle([...sampleQuestions]);
+      qIndex=0;
+      players.forEach(p=>p.points=0);
+      answersBuffer={};
+      renderQuestion(); renderPlayers();
+    });
+
+    function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
     (function init(){
       questions=[...sampleQuestions];
       qTotalSpan.textContent=questions.length;
